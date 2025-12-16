@@ -16,15 +16,11 @@ const storage = {
             .from('user_data')
             .select('value')
             .eq('key', key)
-            .single()
+            .maybeSingle()
           
           if (error) {
             // Handle different error types
-            if (error.code === 'PGRST116') {
-              // No rows returned - this is fine, just no data yet
-              markSupabaseWorking()
-              return null
-            } else if (error.code === '42P01' || error.message?.includes('does not exist')) {
+            if (error.code === '42P01' || error.message?.includes('does not exist')) {
               // Table doesn't exist
               markSupabaseNotWorking()
               return this.getFromLocalStorage(key)
@@ -35,7 +31,7 @@ const storage = {
             }
           }
           
-          // Success
+          // Success - maybeSingle returns null if no rows, or the single row
           markSupabaseWorking()
           return data ? { value: data.value } : null
         } catch (error) {
