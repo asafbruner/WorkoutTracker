@@ -1,4 +1,4 @@
-import { supabase, isSupabaseReady } from './supabaseClient'
+import { supabase, isSupabaseReady, markSupabaseWorking, markSupabaseNotWorking } from './supabaseClient'
 
 // Hybrid storage implementation
 // Uses Supabase when configured, falls back to localStorage
@@ -7,19 +7,8 @@ let supabaseChecked = false
 
 const storage = {
   async get(key) {
-    // Check if Supabase table exists on first use
-    if (!supabaseChecked && supabase) {
-      const isReady = await isSupabaseReady()
-      supabaseChecked = true
-      if (!isReady) {
-        console.info('ℹ️ Using localStorage only. To enable cloud sync, set up the Supabase table (see SUPABASE_SETUP.md)')
-      } else {
-        console.info('✅ Supabase connected - data will sync to cloud')
-      }
-    }
-
-    // Try Supabase first if configured and table exists
-    if (supabase && supabaseChecked) {
+    // Try Supabase if configured
+    if (supabase) {
       const isReady = await isSupabaseReady()
       if (isReady) {
         try {
@@ -30,22 +19,34 @@ const storage = {
             .single()
           
           if (error) {
-            if (error.code !== 'PGRST116') { // Not found is ok
+            // Handle different error types
+            if (error.code === 'PGRST116') {
+              // No rows returned - this is fine, just no data yet
+              markSupabaseWorking()
+              return null
+            } else if (error.code === '42P01' || error.message?.includes('does not exist')) {
+              // Table doesn't exist
+              markSupabaseNotWorking()
+              return this.getFromLocalStorage(key)
+            } else {
+              // Other error
               console.error('Supabase get error:', error)
+              return this.getFromLocalStorage(key)
             }
-            // Fall back to localStorage
-            return this.getFromLocalStorage(key)
           }
           
+          // Success
+          markSupabaseWorking()
           return data ? { value: data.value } : null
         } catch (error) {
           console.error('Supabase get error:', error)
+          markSupabaseNotWorking()
           return this.getFromLocalStorage(key)
         }
       }
     }
     
-    // Use localStorage if Supabase not ready
+    // Use localStorage if Supabase not configured
     return this.getFromLocalStorage(key)
   },
 
@@ -69,12 +70,21 @@ const storage = {
             })
           
           if (error) {
-            console.error('Supabase set error:', error)
+            if (error.code === '42P01' || error.message?.includes('does not exist')) {
+              // Table doesn't exist
+              markSupabaseNotWorking()
+            } else {
+              console.error('Supabase set error:', error)
+            }
+            return { success: false }
           }
           
-          return { success: !error }
+          // Success
+          markSupabaseWorking()
+          return { success: true }
         } catch (error) {
           console.error('Supabase set error:', error)
+          markSupabaseNotWorking()
           return { success: false }
         }
       }
