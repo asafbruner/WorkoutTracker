@@ -6,7 +6,7 @@ import { supabase, isSupabaseConfigured } from './supabaseClient'
 const storage = {
   async get(key) {
     // Try Supabase first if configured
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && supabase) {
       try {
         const { data, error } = await supabase
           .from('user_data')
@@ -38,7 +38,7 @@ const storage = {
     this.setToLocalStorage(key, value)
     
     // Try Supabase if configured
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && supabase) {
       try {
         const { error } = await supabase
           .from('user_data')
@@ -69,7 +69,7 @@ const storage = {
     this.deleteFromLocalStorage(key)
     
     // Try Supabase if configured
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && supabase) {
       try {
         const { error } = await supabase
           .from('user_data')
