@@ -95,63 +95,59 @@ export const checkTableExists = async () => {
   // Create the check promise
   tableCheckPromise = (async () => {
     try {
-      // Try to insert a test record then delete it
-      const testKey = '__table_check_test__'
-      const { error: insertError } = await supabase
-        .from('user_data')
-        .insert({ 
-          key: testKey, 
-          value: 'test',
-          updated_at: new Date().toISOString()
-        })
-      
-      if (insertError) {
-        // 42P01 = table does not exist
-        if (insertError.code === '42P01' || insertError.message?.includes('does not exist')) {
-          console.info('ℹ️ Supabase table does not exist. Attempting to create it automatically...')
-          
-          // Try to create the table
-          const created = await createTable()
-          
-          if (created) {
-            // Try insert again
-            const { error: retryError } = await supabase
-              .from('user_data')
-              .insert({ 
-                key: testKey, 
-                value: 'test',
-                updated_at: new Date().toISOString()
-              })
-            
-            if (!retryError) {
-              await supabase.from('user_data').delete().eq('key', testKey)
-              tableExists = true
-              console.info('✅ Supabase table created and connected - data will sync to cloud')
-              return true
-            }
+      // Use a HEAD request to check if the table exists without causing 406 errors
+      // This checks the table metadata rather than querying data
+      const response = await fetch(
+        `${supabaseUrl}/rest/v1/user_data?select=key&limit=0`, 
+        {
+          method: 'HEAD',
+          headers: {
+            'apikey': supabaseAnonKey,
+            'Authorization': `Bearer ${supabaseAnonKey}`
           }
-          
-          console.info('ℹ️ Using localStorage only. To enable cloud sync, follow SUPABASE_SETUP.md')
-          tableExists = false
-          return false
-        } else if (insertError.code === '23505') {
-          // Unique constraint violation = table exists and this key already exists
-          await supabase.from('user_data').delete().eq('key', testKey)
-          tableExists = true
-          console.info('✅ Supabase connected - data will sync to cloud')
-          return true
-        } else {
-          console.warn('⚠️ Supabase error:', insertError.message)
-          tableExists = false
-          return false
         }
-      }
+      )
       
-      // Insert succeeded, clean up
-      await supabase.from('user_data').delete().eq('key', testKey)
-      tableExists = true
-      console.info('✅ Supabase connected - data will sync to cloud')
-      return true
+      if (response.ok) {
+        // Table exists
+        tableExists = true
+        console.info('✅ Supabase connected - data will sync to cloud')
+        return true
+      } else if (response.status === 404 || response.status === 406) {
+        // Table doesn't exist
+        console.info('ℹ️ Supabase table does not exist. Attempting to create it automatically...')
+        
+        // Try to create the table
+        const created = await createTable()
+        
+        if (created) {
+          // Verify it was created
+          const verifyResponse = await fetch(
+            `${supabaseUrl}/rest/v1/user_data?select=key&limit=0`, 
+            {
+              method: 'HEAD',
+              headers: {
+                'apikey': supabaseAnonKey,
+                'Authorization': `Bearer ${supabaseAnonKey}`
+              }
+            }
+          )
+          
+          if (verifyResponse.ok) {
+            tableExists = true
+            console.info('✅ Supabase table created and connected - data will sync to cloud')
+            return true
+          }
+        }
+        
+        console.info('ℹ️ Using localStorage only. To enable cloud sync, follow SUPABASE_SETUP.md')
+        tableExists = false
+        return false
+      } else {
+        console.warn('⚠️ Unexpected Supabase response:', response.status)
+        tableExists = false
+        return false
+      }
     } catch (error) {
       console.warn('⚠️ Supabase connection test failed:', error.message)
       tableExists = false
