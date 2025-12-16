@@ -15,6 +15,12 @@ export const supabase = isSupabaseConfigured()
       auth: {
         persistSession: false,
         autoRefreshToken: false
+      },
+      global: {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       }
     })
   : null
