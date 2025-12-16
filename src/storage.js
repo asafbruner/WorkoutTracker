@@ -1,35 +1,51 @@
-import { supabase, isSupabaseConfigured } from './supabaseClient'
+import { supabase, isSupabaseReady } from './supabaseClient'
 
 // Hybrid storage implementation
 // Uses Supabase when configured, falls back to localStorage
 
+let supabaseChecked = false
+
 const storage = {
   async get(key) {
-    // Try Supabase first if configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('user_data')
-          .select('value')
-          .eq('key', key)
-          .single()
-        
-        if (error) {
-          if (error.code !== 'PGRST116') { // Not found is ok
-            console.error('Supabase get error:', error)
+    // Check if Supabase table exists on first use
+    if (!supabaseChecked && supabase) {
+      const isReady = await isSupabaseReady()
+      supabaseChecked = true
+      if (!isReady) {
+        console.info('ℹ️ Using localStorage only. To enable cloud sync, set up the Supabase table (see SUPABASE_SETUP.md)')
+      } else {
+        console.info('✅ Supabase connected - data will sync to cloud')
+      }
+    }
+
+    // Try Supabase first if configured and table exists
+    if (supabase && supabaseChecked) {
+      const isReady = await isSupabaseReady()
+      if (isReady) {
+        try {
+          const { data, error } = await supabase
+            .from('user_data')
+            .select('value')
+            .eq('key', key)
+            .single()
+          
+          if (error) {
+            if (error.code !== 'PGRST116') { // Not found is ok
+              console.error('Supabase get error:', error)
+            }
+            // Fall back to localStorage
+            return this.getFromLocalStorage(key)
           }
-          // Fall back to localStorage
+          
+          return data ? { value: data.value } : null
+        } catch (error) {
+          console.error('Supabase get error:', error)
           return this.getFromLocalStorage(key)
         }
-        
-        return data ? { value: data.value } : null
-      } catch (error) {
-        console.error('Supabase get error:', error)
-        return this.getFromLocalStorage(key)
       }
     }
     
-    // Use localStorage if Supabase not configured
+    // Use localStorage if Supabase not ready
     return this.getFromLocalStorage(key)
   },
 
@@ -37,27 +53,30 @@ const storage = {
     // Save to localStorage first (as backup)
     this.setToLocalStorage(key, value)
     
-    // Try Supabase if configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { error } = await supabase
-          .from('user_data')
-          .upsert({ 
-            key, 
-            value,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'key'
-          })
-        
-        if (error) {
+    // Try Supabase if ready
+    if (supabase) {
+      const isReady = await isSupabaseReady()
+      if (isReady) {
+        try {
+          const { error } = await supabase
+            .from('user_data')
+            .upsert({ 
+              key, 
+              value,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'key'
+            })
+          
+          if (error) {
+            console.error('Supabase set error:', error)
+          }
+          
+          return { success: !error }
+        } catch (error) {
           console.error('Supabase set error:', error)
+          return { success: false }
         }
-        
-        return { success: !error }
-      } catch (error) {
-        console.error('Supabase set error:', error)
-        return { success: false }
       }
     }
     
@@ -68,22 +87,25 @@ const storage = {
     // Delete from localStorage
     this.deleteFromLocalStorage(key)
     
-    // Try Supabase if configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { error } = await supabase
-          .from('user_data')
-          .delete()
-          .eq('key', key)
-        
-        if (error) {
+    // Try Supabase if ready
+    if (supabase) {
+      const isReady = await isSupabaseReady()
+      if (isReady) {
+        try {
+          const { error } = await supabase
+            .from('user_data')
+            .delete()
+            .eq('key', key)
+          
+          if (error) {
+            console.error('Supabase delete error:', error)
+          }
+          
+          return { success: !error }
+        } catch (error) {
           console.error('Supabase delete error:', error)
+          return { success: false }
         }
-        
-        return { success: !error }
-      } catch (error) {
-        console.error('Supabase delete error:', error)
-        return { success: false }
       }
     }
     
