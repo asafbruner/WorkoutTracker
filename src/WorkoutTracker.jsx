@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Unlock, Check, X, Edit3, Save, Calendar, History, ChevronLeft, ChevronRight, Dumbbell, Activity, Timer, Coffee, Plus, Trash2, Eye, EyeOff, ClipboardList, TrendingUp } from 'lucide-react';
+import { Lock, Unlock, Check, X, Edit3, Save, Calendar, History, ChevronLeft, ChevronRight, Dumbbell, Activity, Timer, Coffee, Plus, Trash2, Eye, EyeOff, ClipboardList, TrendingUp, Download, Upload } from 'lucide-react';
 
 // Default workout program based on the spreadsheet
 const defaultWorkouts = {
@@ -261,6 +261,67 @@ export default function WorkoutTracker() {
     setShowLogModal(true);
   };
 
+  // Export data to JSON file
+  const handleExportData = async () => {
+    try {
+      const data = await window.storage.exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workout-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSaveStatus('✓ Data exported');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (error) {
+      console.error('Export error:', error);
+      setSaveStatus('Export failed');
+      setTimeout(() => setSaveStatus(''), 2000);
+    }
+  };
+
+  // Import data from JSON file
+  const handleImportData = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      const result = await window.storage.importData(data);
+      
+      if (result.success) {
+        // Reload data from storage
+        const logsResult = await window.storage.get('workout_logs');
+        if (logsResult?.value) {
+          setWorkoutLogs(JSON.parse(logsResult.value));
+        }
+        
+        const programResult = await window.storage.get('workout_program');
+        if (programResult?.value) {
+          setWorkoutProgram(JSON.parse(programResult.value));
+        }
+        
+        setSaveStatus('✓ Data imported');
+      } else {
+        setSaveStatus('Import failed');
+      }
+      
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (error) {
+      console.error('Import error:', error);
+      setSaveStatus('Import failed - Invalid file');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
+    
+    // Reset file input
+    event.target.value = '';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -328,24 +389,68 @@ export default function WorkoutTracker() {
     const isRunning = workout.typeEn === 'Sprints' || workout.typeEn === 'Long Run';
     const isCrossfit = workout.typeEn === 'CrossFit';
 
-    const updateExerciseLog = (exerciseIndex, field, value) => {
-      const newExercises = {
-        ...log.exercises,
-        [exerciseIndex]: {
-          ...(log.exercises[exerciseIndex] || {}),
-          [field]: value
-        }
-      };
-      updateLog(logDate, { exercises: newExercises });
-    };
+    const updateExerciseLog = useCallback((exerciseIndex, field, value) => {
+      setWorkoutLogs(prevLogs => {
+        const dateKey = logDate.toISOString().split('T')[0];
+        const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+        const newLogs = {
+          ...prevLogs,
+          [dateKey]: {
+            ...currentLog,
+            exercises: {
+              ...currentLog.exercises,
+              [exerciseIndex]: {
+                ...(currentLog.exercises[exerciseIndex] || {}),
+                [field]: value
+              }
+            },
+            timestamp: new Date().toISOString()
+          }
+        };
+        // Save to storage asynchronously
+        window.storage.set('workout_logs', JSON.stringify(newLogs));
+        return newLogs;
+      });
+    }, [logDate]);
 
-    const updateRunningLog = (field, value) => {
-      const newRunning = {
-        ...log.running,
-        [field]: value
-      };
-      updateLog(logDate, { running: newRunning });
-    };
+    const updateRunningLog = useCallback((field, value) => {
+      setWorkoutLogs(prevLogs => {
+        const dateKey = logDate.toISOString().split('T')[0];
+        const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+        const newLogs = {
+          ...prevLogs,
+          [dateKey]: {
+            ...currentLog,
+            running: {
+              ...currentLog.running,
+              [field]: value
+            },
+            timestamp: new Date().toISOString()
+          }
+        };
+        // Save to storage asynchronously
+        window.storage.set('workout_logs', JSON.stringify(newLogs));
+        return newLogs;
+      });
+    }, [logDate]);
+
+    const updateGeneralNotes = useCallback((notes) => {
+      setWorkoutLogs(prevLogs => {
+        const dateKey = logDate.toISOString().split('T')[0];
+        const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+        const newLogs = {
+          ...prevLogs,
+          [dateKey]: {
+            ...currentLog,
+            notes,
+            timestamp: new Date().toISOString()
+          }
+        };
+        // Save to storage asynchronously
+        window.storage.set('workout_logs', JSON.stringify(newLogs));
+        return newLogs;
+      });
+    }, [logDate]);
 
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -731,7 +836,7 @@ export default function WorkoutTracker() {
               <label className="text-sm text-gray-400 block mb-2">General Notes</label>
               <textarea
                 value={log.notes || ''}
-                onChange={(e) => updateLog(logDate, { notes: e.target.value })}
+                onChange={(e) => updateGeneralNotes(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
                 placeholder="How did the workout feel? Any PRs? Issues?"
               />
@@ -770,13 +875,31 @@ export default function WorkoutTracker() {
           
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={handleExportData}
+              className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 text-sm"
+              title="Export workout data as backup"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+            <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 text-sm cursor-pointer">
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">Import</span>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImportData}
+                className="hidden"
+              />
+            </label>
+            <button
               onClick={() => setShowHistory(!showHistory)}
               className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm ${
                 showHistory ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
               }`}
             >
               <History className="w-4 h-4" />
-              History
+              <span className="hidden sm:inline">History</span>
             </button>
             <button
               onClick={() => setEditMode(!editMode)}
@@ -785,14 +908,14 @@ export default function WorkoutTracker() {
               }`}
             >
               <Edit3 className="w-4 h-4" />
-              {editMode ? 'Done' : 'Edit'}
+              <span className="hidden sm:inline">{editMode ? 'Done' : 'Edit'}</span>
             </button>
             <button
               onClick={handleLogout}
               className="px-3 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded-lg transition-colors flex items-center gap-2 text-sm"
             >
               <Unlock className="w-4 h-4" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
         </div>
