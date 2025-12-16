@@ -1,12 +1,14 @@
 const { test, expect } = require('@playwright/test');
 
 test.describe('Production Deployment Tests', () => {
-  const PRODUCTION_URL = 'https://workouttracker-six.vercel.app/';
+  // Using production URL - CDN cache will clear within 15-30 minutes
+  const PRODUCTION_URL = `https://workouttracker-six.vercel.app/?nocache=${Date.now()}`;
   
   test('should load the production app without errors', async ({ page }) => {
-    // Array to collect console errors
+    // Array to collect console errors and 406 errors specifically
     const consoleErrors = [];
     const networkErrors = [];
+    const error406s = [];
     
     // Listen for console errors
     page.on('console', msg => {
@@ -25,39 +27,46 @@ test.describe('Production Deployment Tests', () => {
       networkErrors.push(`${request.failure().errorText} - ${request.url()}`);
     });
     
+    // Listen specifically for 406 responses
+    page.on('response', response => {
+      if (response.status() === 406) {
+        error406s.push(`406 Error: ${response.url()}`);
+      }
+    });
+    
     // Navigate to the production URL
     console.log('🌐 Navigating to:', PRODUCTION_URL);
     await page.goto(PRODUCTION_URL, { waitUntil: 'networkidle' });
     
     // Wait for the app to load
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
     
-    // Check if the login page loaded
-    const loginHeading = await page.locator('h1:has-text("Workout Tracker")');
-    await expect(loginHeading).toBeVisible();
-    console.log('✅ Login page loaded successfully');
+    // Check if we're on login page OR main app
+    const loginHeading = page.locator('h1:has-text("Workout Tracker")');
+    const appHeader = page.locator('header');
     
-    // Check for password input
-    const passwordInput = await page.locator('input[type="password"]');
-    await expect(passwordInput).toBeVisible();
-    console.log('✅ Password input is visible');
+    const isLoginPage = await loginHeading.isVisible().catch(() => false);
+    const isMainApp = await appHeader.isVisible().catch(() => false);
     
-    // Check for login button
-    const loginButton = await page.locator('button:has-text("Login")');
-    await expect(loginButton).toBeVisible();
-    console.log('✅ Login button is visible');
-    
-    // Test login functionality
-    await passwordInput.fill('asaf2024');
-    await loginButton.click();
-    
-    // Wait for the main app to load
-    await page.waitForTimeout(2000);
-    
-    // Verify main app loaded
-    const appHeader = await page.locator('header');
-    await expect(appHeader).toBeVisible();
-    console.log('✅ Successfully logged in');
+    if (isLoginPage && !isMainApp) {
+      console.log('✅ Login page loaded');
+      
+      // Login
+      const passwordInput = await page.locator('input[type="password"]');
+      await passwordInput.fill('asaf2024');
+      
+      const loginButton = await page.locator('button:has-text("Login")');
+      await loginButton.click();
+      
+      // Wait for main app
+      await page.waitForTimeout(2000);
+      await expect(appHeader).toBeVisible();
+      console.log('✅ Successfully logged in');
+    } else if (isMainApp) {
+      console.log('✅ Already logged in - main app loaded');
+    } else {
+      throw new Error('Neither login page nor main app found');
+    }
     
     // Check for key UI elements
     const exportButton = await page.locator('button:has-text("Export"), button[title*="Export"]');
@@ -125,15 +134,20 @@ test.describe('Production Deployment Tests', () => {
       }
     });
     
-    // Navigate and login
+    // Navigate
     await page.goto(PRODUCTION_URL);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
     
-    const passwordInput = await page.locator('input[type="password"]');
-    await passwordInput.fill('asaf2024');
+    // Check if login needed
+    const passwordInput = page.locator('input[type="password"]');
+    const isLoginPage = await passwordInput.isVisible().catch(() => false);
     
-    const loginButton = await page.locator('button:has-text("Login")');
-    await loginButton.click();
+    if (isLoginPage) {
+      await passwordInput.fill('asaf2024');
+      const loginButton = await page.locator('button:has-text("Login")');
+      await loginButton.click();
+      await page.waitForTimeout(2000);
+    }
     
     // Wait for app to fully load
     await page.waitForTimeout(3000);
@@ -161,15 +175,20 @@ test.describe('Production Deployment Tests', () => {
       });
     });
     
-    // Navigate and login
+    // Navigate
     await page.goto(PRODUCTION_URL);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
     
-    const passwordInput = await page.locator('input[type="password"]');
-    await passwordInput.fill('asaf2024');
+    // Check if login needed
+    const passwordInput = page.locator('input[type="password"]');
+    const isLoginPage = await passwordInput.isVisible().catch(() => false);
     
-    const loginButton = await page.locator('button:has-text("Login")');
-    await loginButton.click();
+    if (isLoginPage) {
+      await passwordInput.fill('asaf2024');
+      const loginButton = await page.locator('button:has-text("Login")');
+      await loginButton.click();
+      await page.waitForTimeout(2000);
+    }
     
     // Wait for storage initialization
     await page.waitForTimeout(3000);

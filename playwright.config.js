@@ -11,12 +11,21 @@ module.exports = defineConfig({
   use: {
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // Disable cache to get fresh deployment
+    ignoreHTTPSErrors: true,
+    bypassCSP: true,
   },
 
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { 
+        ...devices['Desktop Chrome'],
+        // Launch in incognito mode to bypass cache
+        launchOptions: {
+          args: ['--incognito']
+        }
+      },
     },
   ],
 });

@@ -9,17 +9,21 @@ export const isSupabaseConfigured = () => {
   return !!(supabaseUrl && supabaseAnonKey && supabaseUrl.includes('supabase.co'))
 }
 
-// Create Supabase client
+// Create Supabase client with PostgREST preferences
 export const supabase = isSupabaseConfigured() 
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false
       },
+      db: {
+        schema: 'public'
+      },
       global: {
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
         }
       }
     })
