@@ -1,0 +1,176 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e7]
+        - heading "Workout Tracker" [level=1] [ref=e15]
+      - generic [ref=e16]:
+        - button "Export" [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+          - generic [ref=e21]: Export
+        - generic [ref=e22] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e26]: Import
+        - button "Schedule" [ref=e27] [cursor=pointer]:
+          - img [ref=e28]
+          - generic [ref=e30]: Schedule
+        - button "Progress" [ref=e31] [cursor=pointer]:
+          - img [ref=e32]
+          - generic [ref=e35]: Progress
+        - button "History" [ref=e36] [cursor=pointer]:
+          - img [ref=e37]
+          - generic [ref=e41]: History
+        - button "Edit" [ref=e42] [cursor=pointer]:
+          - img [ref=e43]
+          - generic [ref=e45]: Edit
+        - button "Logout" [ref=e46] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: Logout
+  - main [ref=e51]:
+    - generic [ref=e52]:
+      - button [ref=e53] [cursor=pointer]:
+        - img [ref=e54]
+      - generic [ref=e56]:
+        - heading "December 2025" [level=2] [ref=e57]
+        - paragraph [ref=e58]: 14 Dec - 20 Dec
+      - button [ref=e59] [cursor=pointer]:
+        - img [ref=e60]
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - generic [ref=e65]:
+            - generic [ref=e66]: Sun
+            - generic [ref=e67]: א • 14
+          - img [ref=e69]
+        - generic [ref=e71]:
+          - generic [ref=e72]: Strength
+          - generic [ref=e73]: כוח
+        - generic [ref=e74]:
+          - generic [ref=e75]:
+            - generic [ref=e76]: Back Squats
+            - generic [ref=e77]: "3 super-sets: 5 reps"
+          - generic [ref=e78]:
+            - generic [ref=e79]: Weighted Dips
+            - generic [ref=e80]: "3 super-sets: 8 reps"
+          - generic [ref=e81]:
+            - generic [ref=e82]: Strict Press
+            - generic [ref=e83]: "3 super-sets: 5 reps"
+          - generic [ref=e84]: +3 more...
+        - button "Log Workout" [ref=e86] [cursor=pointer]:
+          - img [ref=e87]
+          - text: Log Workout
+      - generic [ref=e90]:
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: Mon
+            - generic [ref=e94]: ב • 15
+          - img [ref=e96]
+        - generic [ref=e98]:
+          - generic [ref=e99]: CrossFit
+          - generic [ref=e100]: קרוספיט
+        - generic [ref=e102]:
+          - generic [ref=e103]: CrossFit WOD
+          - generic [ref=e104]: Based on gym programming
+        - button "Log Workout" [ref=e106] [cursor=pointer]:
+          - img [ref=e107]
+          - text: Log Workout
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - generic [ref=e112]:
+            - generic [ref=e113]: Tue
+            - generic [ref=e114]: ג • 16
+          - img [ref=e116]
+        - generic [ref=e118]:
+          - generic [ref=e119]: CrossFit
+          - generic [ref=e120]: קרוספיט
+        - generic [ref=e122]:
+          - generic [ref=e123]: CrossFit WOD
+          - generic [ref=e124]: Based on gym programming
+        - button "Log Workout" [ref=e126] [cursor=pointer]:
+          - img [ref=e127]
+          - text: Log Workout
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - generic [ref=e132]:
+            - generic [ref=e133]: Wed
+            - generic [ref=e134]: ד • 17
+          - img [ref=e136]
+        - generic [ref=e138]:
+          - generic [ref=e139]: Sprints
+          - generic [ref=e140]: ריצה (ספרינטים)
+        - generic [ref=e141]:
+          - generic [ref=e142]:
+            - generic [ref=e143]: Warm-up
+            - generic [ref=e144]: 10 mins
+          - generic [ref=e145]:
+            - generic [ref=e146]: 150m Sprint
+            - generic [ref=e147]: 8 sets
+          - generic [ref=e148]:
+            - generic [ref=e149]: Cool-down
+            - generic [ref=e150]: 7-10 min
+        - button "Log Workout" [ref=e152] [cursor=pointer]:
+          - img [ref=e153]
+          - text: Log Workout
+      - generic [ref=e156]:
+        - generic [ref=e158]:
+          - generic [ref=e159]: Thu
+          - generic [ref=e160]: ה • 18
+        - generic [ref=e161]:
+          - generic [ref=e162]: Strength
+          - generic [ref=e163]: כוח
+        - generic [ref=e164]:
+          - generic [ref=e165]:
+            - generic [ref=e166]: Deadlifts
+            - generic [ref=e167]: "3 super-sets: 5 reps"
+          - generic [ref=e168]:
+            - generic [ref=e169]: Weighted Dips
+            - generic [ref=e170]: "3 super-sets: 8 reps"
+          - generic [ref=e171]:
+            - generic [ref=e172]: Bench Press
+            - generic [ref=e173]: "3 super-sets: 5 reps"
+          - generic [ref=e174]: +3 more...
+        - button "Log Workout" [ref=e176] [cursor=pointer]:
+          - img [ref=e177]
+          - text: Log Workout
+      - generic [ref=e180]:
+        - generic [ref=e182]:
+          - generic [ref=e183]: Fri
+          - generic [ref=e184]: ו • 19
+        - generic [ref=e185]:
+          - generic [ref=e186]: Rest
+          - generic [ref=e187]: מנוחה
+        - generic [ref=e190]: Rest Day
+      - generic [ref=e191]:
+        - generic [ref=e193]:
+          - generic [ref=e194]: Sat
+          - generic [ref=e195]: ש • 20
+        - generic [ref=e196]:
+          - generic [ref=e197]: Long Run
+          - generic [ref=e198]: ריצה (Zone 2)
+        - generic [ref=e200]:
+          - generic [ref=e201]: 30 min Long Run
+          - generic [ref=e202]: 1 session
+        - button "Log Workout" [ref=e204] [cursor=pointer]:
+          - img [ref=e205]
+          - text: Log Workout
+    - generic [ref=e208]:
+      - generic [ref=e209]:
+        - generic [ref=e210]: This Week
+        - generic [ref=e211]: 4/6
+        - generic [ref=e212]: workouts completed
+      - generic [ref=e213]:
+        - generic [ref=e214]: Strength
+        - generic [ref=e215]: 1/2
+        - generic [ref=e216]: this week
+      - generic [ref=e217]:
+        - generic [ref=e218]: CrossFit
+        - generic [ref=e219]: 2/2
+        - generic [ref=e220]: this week
+      - generic [ref=e221]:
+        - generic [ref=e222]: Running
+        - generic [ref=e223]: 1/2
+        - generic [ref=e224]: this week
+```

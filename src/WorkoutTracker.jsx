@@ -1,12 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Unlock, Check, X, Edit3, Save, Calendar, History, ChevronLeft, ChevronRight, Dumbbell, Activity, Timer, Coffee, Plus, Trash2, Eye, EyeOff, ClipboardList, TrendingUp, Download, Upload } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Unlock, Check, X, Edit3, Calendar, History, ChevronLeft, ChevronRight, Dumbbell, Plus, Trash2, ClipboardList, TrendingUp, Download, Upload, Activity, Timer, Save, Eye, EyeOff, Lock, Settings } from 'lucide-react';
+import LoginScreen from './components/LoginScreen';
+import ProgressDashboard from './components/ProgressDashboard';
+import ScheduleConfig from './components/ScheduleConfig';
+import { verifyPassword, getActivePasswordHash } from './utils/auth';
+import { registerServiceWorker, setupInstallPrompt, showInstallPrompt, isInstalled } from './utils/pwa';
+import { calculateStreak } from './utils/analytics';
 
 // Default workout program based on the spreadsheet
 const defaultWorkouts = {
   0: { // Sunday - א
     type: 'כוח',
     typeEn: 'Strength',
-    color: 'bg-blue-500',
+    color: 'bg-indigo-600',
     exercises: [
       { name: 'Back Squats', sets: '3 super-sets: 5 reps', targetWeight: '70', notes: '+ 8 Weighted dips (2min rest between)' },
       { name: 'Weighted Dips', sets: '3 super-sets: 8 reps', targetWeight: '12', notes: 'Part of super-set with squats' },
@@ -19,7 +25,7 @@ const defaultWorkouts = {
   1: { // Monday - ב
     type: 'קרוספיט',
     typeEn: 'CrossFit',
-    color: 'bg-orange-500',
+    color: 'bg-amber-600',
     exercises: [
       { name: 'CrossFit WOD', sets: 'Based on gym programming', notes: 'מבוסס על תכנית האימונים במועדון' }
     ]
@@ -27,7 +33,7 @@ const defaultWorkouts = {
   2: { // Tuesday - ג
     type: 'קרוספיט',
     typeEn: 'CrossFit',
-    color: 'bg-orange-500',
+    color: 'bg-amber-600',
     exercises: [
       { name: 'CrossFit WOD', sets: 'Based on gym programming', notes: 'מבוסס על תכנית האימונים במועדון' }
     ]
@@ -35,7 +41,7 @@ const defaultWorkouts = {
   3: { // Wednesday - ד
     type: 'ריצה (ספרינטים)',
     typeEn: 'Sprints',
-    color: 'bg-green-500',
+    color: 'bg-lime-600',
     exercises: [
       { name: 'Warm-up', sets: '10 mins', notes: 'Easy jog + high knees, butt kicks, triple jump' },
       { name: '150m Sprint', sets: '8 sets', notes: 'RPE: 9-10, REST: 90-120sec walking to start line' },
@@ -45,7 +51,7 @@ const defaultWorkouts = {
   4: { // Thursday - ה
     type: 'כוח',
     typeEn: 'Strength',
-    color: 'bg-blue-500',
+    color: 'bg-indigo-600',
     exercises: [
       { name: 'Deadlifts', sets: '3 super-sets: 5 reps', targetWeight: '', notes: '+ 8 Weighted dips (2min rest between)' },
       { name: 'Weighted Dips', sets: '3 super-sets: 8 reps', targetWeight: '', notes: 'Part of super-set with deadlifts' },
@@ -58,7 +64,7 @@ const defaultWorkouts = {
   5: { // Friday - ו
     type: 'ריצה (Zone 2)',
     typeEn: 'Long Run',
-    color: 'bg-emerald-500',
+    color: 'bg-teal-600',
     exercises: [
       { name: '30 min Long Run', sets: '1 session', notes: 'Heart rate: 120-135bpm, Pace: 05:50-06:00, RPE: 4-5' }
     ]
@@ -66,7 +72,7 @@ const defaultWorkouts = {
   6: { // Saturday - ש
     type: 'מנוחה',
     typeEn: 'Rest',
-    color: 'bg-gray-400',
+    color: 'bg-slate-600',
     exercises: [
       { name: 'Rest Day', sets: '', notes: 'Recovery and regeneration' }
     ]
@@ -76,23 +82,21 @@ const defaultWorkouts = {
 const hebrewDays = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 const englishDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// Password (change this!)
-const PASSWORD_HASH = 'asaf2024';
-
 export default function WorkoutTracker() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [authError, setAuthError] = useState('');
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [workoutProgram, setWorkoutProgram] = useState(defaultWorkouts);
+  const [weeklySchedules, setWeeklySchedules] = useState({}); // Store per-week schedules
   const [workoutLogs, setWorkoutLogs] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showProgressDashboard, setShowProgressDashboard] = useState(false);
+  const [showScheduleConfig, setShowScheduleConfig] = useState(false);
   const [logDate, setLogDate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('');
+  const saveTimeoutRef = useRef(null);
 
   // Get week dates
   const getWeekDates = useCallback((date) => {
@@ -111,30 +115,83 @@ export default function WorkoutTracker() {
 
   const weekDates = getWeekDates(currentWeek);
 
+  // Get week key for storing per-week schedules
+  const getWeekKey = useCallback((date) => {
+    const weekStart = new Date(date);
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() - day);
+    return weekStart.toISOString().split('T')[0]; // Use Sunday's date as key
+  }, []);
+
+  const currentWeekKey = getWeekKey(currentWeek);
+
+  // Get workout for specific date (checks week-specific schedule first, then falls back to default)
+  const getWorkoutForDate = useCallback((date) => {
+    const weekKey = getWeekKey(date);
+    const dayIndex = date.getDay();
+    
+    // Check if there's a custom schedule for this week
+    if (weeklySchedules[weekKey] && weeklySchedules[weekKey][dayIndex]) {
+      return weeklySchedules[weekKey][dayIndex];
+    }
+    
+    // Fall back to default program
+    return workoutProgram[dayIndex];
+  }, [weeklySchedules, workoutProgram, getWeekKey]);
+
+  // Initialize PWA on mount
+  useEffect(() => {
+    registerServiceWorker();
+    setupInstallPrompt((available) => {
+      console.log('Install prompt available:', available);
+    });
+  }, []);
+
   // Load data from storage
   useEffect(() => {
     const loadData = async () => {
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        setLoading(false);
+      }, 3000);
+
       try {
         const authResult = await window.storage.get('auth_state');
         if (authResult?.value === 'authenticated') {
           setIsAuthenticated(true);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Auth load error:', e);
+      }
 
       try {
         const programResult = await window.storage.get('workout_program');
         if (programResult?.value) {
           setWorkoutProgram(JSON.parse(programResult.value));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Program load error:', e);
+      }
 
       try {
         const logsResult = await window.storage.get('workout_logs');
         if (logsResult?.value) {
           setWorkoutLogs(JSON.parse(logsResult.value));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Logs load error:', e);
+      }
+
+      try {
+        const schedulesResult = await window.storage.get('weekly_schedules');
+        if (schedulesResult?.value) {
+          setWeeklySchedules(JSON.parse(schedulesResult.value));
+        }
+      } catch (e) {
+        console.error('Schedules load error:', e);
+      }
       
+      clearTimeout(timeoutId);
       setLoading(false);
     };
     loadData();
@@ -152,16 +209,21 @@ export default function WorkoutTracker() {
     }
   };
 
-  // Handle login
-  const handleLogin = async () => {
-    if (password === PASSWORD_HASH) {
-      setIsAuthenticated(true);
-      setAuthError('');
-      try {
+  // Handle login with password hashing
+  const handleLogin = async (password) => {
+    try {
+      const hash = await getActivePasswordHash();
+      const isValid = await verifyPassword(password, hash);
+      
+      if (isValid) {
+        setIsAuthenticated(true);
         await window.storage.set('auth_state', 'authenticated');
-      } catch (e) {}
-    } else {
-      setAuthError('Incorrect password');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
     }
   };
 
@@ -261,6 +323,87 @@ export default function WorkoutTracker() {
     setShowLogModal(true);
   };
 
+  // Handle schedule save for current week only
+  const handleScheduleSave = async (schedule) => {
+    // Map workout types to their configurations
+    const workoutTypeConfigs = {
+      'Strength': {
+        type: 'כוח',
+        typeEn: 'Strength',
+        color: 'bg-blue-500',
+        exercises: [
+          { name: 'Back Squats', sets: '3 super-sets: 5 reps', targetWeight: '70', notes: '+ 8 Weighted dips (2min rest between)' },
+          { name: 'Weighted Dips', sets: '3 super-sets: 8 reps', targetWeight: '12', notes: 'Part of super-set with squats' },
+          { name: 'Strict Press', sets: '3 super-sets: 5 reps', targetWeight: '45', notes: '+ 8 Weighted pull ups (2min rest between)' },
+          { name: 'Weighted Pull Ups', sets: '3 super-sets: 8 reps', targetWeight: '', notes: 'Part of super-set with press' },
+          { name: 'Max Reps Dips (B.W)', sets: '1 set', targetReps: '20', notes: '' },
+          { name: 'Max Reps Pull Ups (B.W)', sets: '1 set', targetReps: '20', notes: '' }
+        ]
+      },
+      'CrossFit': {
+        type: 'קרוספיט',
+        typeEn: 'CrossFit',
+        color: 'bg-orange-500',
+        exercises: [
+          { name: 'CrossFit WOD', sets: 'Based on gym programming', notes: 'מבוסס על תכנית האימונים במועדון' }
+        ]
+      },
+      'Sprints': {
+        type: 'ריצה (ספרינטים)',
+        typeEn: 'Sprints',
+        color: 'bg-green-500',
+        exercises: [
+          { name: 'Warm-up', sets: '10 mins', notes: 'Easy jog + high knees, butt kicks, triple jump' },
+          { name: '150m Sprint', sets: '8 sets', notes: 'RPE: 9-10, REST: 90-120sec walking to start line' },
+          { name: 'Cool-down', sets: '7-10 min', notes: 'Light jog' }
+        ]
+      },
+      'Long Run': {
+        type: 'ריצה (Zone 2)',
+        typeEn: 'Long Run',
+        color: 'bg-emerald-500',
+        exercises: [
+          { name: '30 min Long Run', sets: '1 session', notes: 'Heart rate: 120-135bpm, Pace: 05:50-06:00, RPE: 4-5' }
+        ]
+      },
+      'Rest': {
+        type: 'מנוחה',
+        typeEn: 'Rest',
+        color: 'bg-gray-400',
+        exercises: [
+          { name: 'Rest Day', sets: '', notes: 'Recovery and regeneration' }
+        ]
+      }
+    };
+
+    // Create schedule for the current week only
+    const weekSchedule = {};
+    schedule.forEach(({ day, workoutType }) => {
+      // Check if we have existing data for this day in current week
+      const existingWorkout = getWorkoutForDate(weekDates[day]);
+      const newWorkoutType = workoutTypeConfigs[workoutType];
+      
+      if (existingWorkout && existingWorkout.typeEn === workoutType) {
+        // Keep existing configuration if same type
+        weekSchedule[day] = existingWorkout;
+      } else {
+        // Use default configuration for new type
+        weekSchedule[day] = { ...newWorkoutType };
+      }
+    });
+
+    // Save to weekly schedules
+    const newWeeklySchedules = {
+      ...weeklySchedules,
+      [currentWeekKey]: weekSchedule
+    };
+    
+    setWeeklySchedules(newWeeklySchedules);
+    await saveData('weekly_schedules', newWeeklySchedules);
+    setSaveStatus('✓ Schedule saved for this week');
+    setTimeout(() => setSaveStatus(''), 2000);
+  };
+
   // Export data to JSON file
   const handleExportData = async () => {
     try {
@@ -330,52 +473,9 @@ export default function WorkoutTracker() {
     );
   }
 
-  // Login screen
+  // Use LoginScreen component
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md border border-gray-700">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Dumbbell className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Workout Tracker</h1>
-            <p className="text-gray-400">תכנית אימונים - אסף ברונר</p>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="Enter password"
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
-              />
-              <button
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-            
-            {authError && (
-              <p className="text-red-400 text-sm text-center">{authError}</p>
-            )}
-            
-            <button
-              onClick={handleLogin}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <Lock className="w-5 h-5" />
-              Login
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   // Log Modal Component
@@ -389,67 +489,144 @@ export default function WorkoutTracker() {
     const isRunning = workout.typeEn === 'Sprints' || workout.typeEn === 'Long Run';
     const isCrossfit = workout.typeEn === 'CrossFit';
 
-    const updateExerciseLog = useCallback((exerciseIndex, field, value) => {
-      setWorkoutLogs(prevLogs => {
-        const dateKey = logDate.toISOString().split('T')[0];
-        const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
-        const newLogs = {
-          ...prevLogs,
-          [dateKey]: {
-            ...currentLog,
-            exercises: {
-              ...currentLog.exercises,
-              [exerciseIndex]: {
-                ...(currentLog.exercises[exerciseIndex] || {}),
-                [field]: value
-              }
-            },
-            timestamp: new Date().toISOString()
-          }
+    // Store form data in ref to avoid re-renders
+    const formDataRef = useRef({
+      exercises: {},
+      running: {},
+      notes: ''
+    });
+
+    // Initialize form data from log only once when modal opens
+    const initializedRef = useRef(false);
+    useEffect(() => {
+      if (!initializedRef.current) {
+        formDataRef.current = {
+          exercises: { ...log.exercises },
+          running: { ...log.running },
+          notes: log.notes || ''
         };
-        // Save to storage asynchronously
-        window.storage.set('workout_logs', JSON.stringify(newLogs));
-        return newLogs;
-      });
+        initializedRef.current = true;
+      }
+      
+      return () => {
+        initializedRef.current = false;
+      };
+    }, [logDate]);
+
+    const updateExerciseLog = useCallback((exerciseIndex, field, value) => {
+      // Update ref immediately
+      if (!formDataRef.current.exercises[exerciseIndex]) {
+        formDataRef.current.exercises[exerciseIndex] = {};
+      }
+      formDataRef.current.exercises[exerciseIndex][field] = value;
+
+      // Debounce state update
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      saveTimeoutRef.current = setTimeout(() => {
+        const dateKey = logDate.toISOString().split('T')[0];
+        // Save directly to storage without triggering state update to prevent re-render
+        window.storage.get('workout_logs').then(result => {
+          const currentLogs = result?.value ? JSON.parse(result.value) : {};
+          const currentLog = currentLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+          const newLogs = {
+            ...currentLogs,
+            [dateKey]: {
+              ...currentLog,
+              exercises: { ...formDataRef.current.exercises },
+              timestamp: new Date().toISOString()
+            }
+          };
+          window.storage.set('workout_logs', JSON.stringify(newLogs));
+        });
+      }, 1500);
     }, [logDate]);
 
     const updateRunningLog = useCallback((field, value) => {
-      setWorkoutLogs(prevLogs => {
+      // Update ref immediately
+      formDataRef.current.running[field] = value;
+
+      // Debounce state update
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      saveTimeoutRef.current = setTimeout(() => {
         const dateKey = logDate.toISOString().split('T')[0];
-        const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
-        const newLogs = {
-          ...prevLogs,
-          [dateKey]: {
-            ...currentLog,
-            running: {
-              ...currentLog.running,
-              [field]: value
-            },
-            timestamp: new Date().toISOString()
-          }
-        };
-        // Save to storage asynchronously
-        window.storage.set('workout_logs', JSON.stringify(newLogs));
-        return newLogs;
-      });
+        // Save directly to storage without triggering state update to prevent re-render
+        window.storage.get('workout_logs').then(result => {
+          const currentLogs = result?.value ? JSON.parse(result.value) : {};
+          const currentLog = currentLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+          const newLogs = {
+            ...currentLogs,
+            [dateKey]: {
+              ...currentLog,
+              running: { ...formDataRef.current.running },
+              timestamp: new Date().toISOString()
+            }
+          };
+          window.storage.set('workout_logs', JSON.stringify(newLogs));
+        });
+      }, 1500);
     }, [logDate]);
 
     const updateGeneralNotes = useCallback((notes) => {
-      setWorkoutLogs(prevLogs => {
+      // Update ref immediately
+      formDataRef.current.notes = notes;
+
+      // Debounce state update
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      saveTimeoutRef.current = setTimeout(() => {
         const dateKey = logDate.toISOString().split('T')[0];
+        // Save directly to storage without triggering state update to prevent re-render
+        window.storage.get('workout_logs').then(result => {
+          const currentLogs = result?.value ? JSON.parse(result.value) : {};
+          const currentLog = currentLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
+          const newLogs = {
+            ...currentLogs,
+            [dateKey]: {
+              ...currentLog,
+              notes: formDataRef.current.notes,
+              timestamp: new Date().toISOString()
+            }
+          };
+          window.storage.set('workout_logs', JSON.stringify(newLogs));
+        });
+      }, 1500);
+    }, [logDate]);
+
+    // Save on modal close and update state
+    const handleClose = useCallback(() => {
+      // Clear any pending timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      // Save immediately and update state
+      const dateKey = logDate.toISOString().split('T')[0];
+      setWorkoutLogs(prevLogs => {
         const currentLog = prevLogs[dateKey] || { completed: null, exercises: {}, running: {}, notes: '' };
         const newLogs = {
           ...prevLogs,
           [dateKey]: {
             ...currentLog,
-            notes,
+            exercises: { ...formDataRef.current.exercises },
+            running: { ...formDataRef.current.running },
+            notes: formDataRef.current.notes,
             timestamp: new Date().toISOString()
           }
         };
-        // Save to storage asynchronously
+        
         window.storage.set('workout_logs', JSON.stringify(newLogs));
         return newLogs;
       });
+      
+      setShowLogModal(false);
     }, [logDate]);
 
     return (
@@ -527,8 +704,13 @@ export default function WorkoutTracker() {
                       <div>
                         <label className="text-xs text-gray-400 block mb-1">Weight (kg)</label>
                         <input
+                          key={`weight-${idx}-${logDate.toISOString()}`}
                           type="number"
-                          value={log.exercises[idx]?.weight || ''}
+                          defaultValue={log.exercises[idx]?.weight || ''}
+                          onFocus={(e) => {
+                            // Select all text on focus for easy overwriting
+                            e.target.select();
+                          }}
                           onChange={(e) => updateExerciseLog(idx, 'weight', e.target.value)}
                           className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="kg"
@@ -537,8 +719,13 @@ export default function WorkoutTracker() {
                       <div>
                         <label className="text-xs text-gray-400 block mb-1">Reps</label>
                         <input
+                          key={`reps-${idx}-${logDate.toISOString()}`}
                           type="text"
-                          value={log.exercises[idx]?.reps || ''}
+                          defaultValue={log.exercises[idx]?.reps || ''}
+                          onFocus={(e) => {
+                            // Select all text on focus for easy overwriting
+                            e.target.select();
+                          }}
                           onChange={(e) => updateExerciseLog(idx, 'reps', e.target.value)}
                           className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="5/5/5"
@@ -547,8 +734,9 @@ export default function WorkoutTracker() {
                       <div>
                         <label className="text-xs text-gray-400 block mb-1">Sets Done</label>
                         <input
+                          key={`sets-${idx}-${logDate.toISOString()}`}
                           type="number"
-                          value={log.exercises[idx]?.sets || ''}
+                          defaultValue={log.exercises[idx]?.sets || ''}
                           onChange={(e) => updateExerciseLog(idx, 'sets', e.target.value)}
                           className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="3"
@@ -558,13 +746,18 @@ export default function WorkoutTracker() {
                     
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Notes</label>
-                      <input
-                        type="text"
-                        value={log.exercises[idx]?.notes || ''}
-                        onChange={(e) => updateExerciseLog(idx, 'notes', e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="How did it feel? Any issues?"
-                      />
+                        <input
+                          key={`notes-${idx}-${logDate.toISOString()}`}
+                          type="text"
+                          defaultValue={log.exercises[idx]?.notes || ''}
+                          onFocus={(e) => {
+                            // Select all text on focus for easy overwriting
+                            e.target.select();
+                          }}
+                          onChange={(e) => updateExerciseLog(idx, 'notes', e.target.value)}
+                          className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="How did it feel? Any issues?"
+                        />
                     </div>
                   </div>
                 ))}
@@ -584,8 +777,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Duration (min)</label>
                       <input
+                        key={`duration-${logDate.toISOString()}`}
                         type="number"
-                        value={log.running?.duration || ''}
+                        defaultValue={log.running?.duration || ''}
                         onChange={(e) => updateRunningLog('duration', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="30"
@@ -594,9 +788,14 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Distance (km)</label>
                       <input
+                        key={`distance-${logDate.toISOString()}`}
                         type="number"
                         step="0.1"
-                        value={log.running?.distance || ''}
+                        defaultValue={log.running?.distance || ''}
+                        onFocus={(e) => {
+                          // Select all text on focus for easy overwriting
+                          e.target.select();
+                        }}
                         onChange={(e) => updateRunningLog('distance', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="5.0"
@@ -608,8 +807,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Avg Pace (min/km)</label>
                       <input
+                        key={`pace-${logDate.toISOString()}`}
                         type="text"
-                        value={log.running?.pace || ''}
+                        defaultValue={log.running?.pace || ''}
                         onChange={(e) => updateRunningLog('pace', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="5:50"
@@ -618,8 +818,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Avg Heart Rate (bpm)</label>
                       <input
+                        key={`heartRate-${logDate.toISOString()}`}
                         type="number"
-                        value={log.running?.heartRate || ''}
+                        defaultValue={log.running?.heartRate || ''}
                         onChange={(e) => updateRunningLog('heartRate', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="125"
@@ -631,10 +832,11 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">RPE (1-10)</label>
                       <input
+                        key={`rpe-${logDate.toISOString()}`}
                         type="number"
                         min="1"
                         max="10"
-                        value={log.running?.rpe || ''}
+                        defaultValue={log.running?.rpe || ''}
                         onChange={(e) => updateRunningLog('rpe', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="4"
@@ -643,8 +845,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Calories Burned</label>
                       <input
+                        key={`calories-${logDate.toISOString()}`}
                         type="number"
-                        value={log.running?.calories || ''}
+                        defaultValue={log.running?.calories || ''}
                         onChange={(e) => updateRunningLog('calories', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="300"
@@ -655,8 +858,9 @@ export default function WorkoutTracker() {
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Route / Location</label>
                     <input
+                      key={`route-${logDate.toISOString()}`}
                       type="text"
-                      value={log.running?.route || ''}
+                      defaultValue={log.running?.route || ''}
                       onChange={(e) => updateRunningLog('route', e.target.value)}
                       className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       placeholder="Park, Treadmill, etc."
@@ -679,8 +883,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Sprints Completed</label>
                       <input
+                        key={`sprintsCompleted-${logDate.toISOString()}`}
                         type="number"
-                        value={log.running?.sprintsCompleted || ''}
+                        defaultValue={log.running?.sprintsCompleted || ''}
                         onChange={(e) => updateRunningLog('sprintsCompleted', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="8"
@@ -689,8 +894,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Sprint Distance (m)</label>
                       <input
+                        key={`sprintDistance-${logDate.toISOString()}`}
                         type="number"
-                        value={log.running?.sprintDistance || ''}
+                        defaultValue={log.running?.sprintDistance || ''}
                         onChange={(e) => updateRunningLog('sprintDistance', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="150"
@@ -701,8 +907,9 @@ export default function WorkoutTracker() {
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Sprint Times (comma separated)</label>
                     <input
+                      key={`sprintTimes-${logDate.toISOString()}`}
                       type="text"
-                      value={log.running?.sprintTimes || ''}
+                      defaultValue={log.running?.sprintTimes || ''}
                       onChange={(e) => updateRunningLog('sprintTimes', e.target.value)}
                       className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="22s, 23s, 22s, 24s, 23s, 24s, 25s, 26s"
@@ -713,8 +920,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Best Sprint Time</label>
                       <input
+                        key={`bestTime-${logDate.toISOString()}`}
                         type="text"
-                        value={log.running?.bestTime || ''}
+                        defaultValue={log.running?.bestTime || ''}
                         onChange={(e) => updateRunningLog('bestTime', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="21s"
@@ -723,8 +931,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Avg Sprint Time</label>
                       <input
+                        key={`avgTime-${logDate.toISOString()}`}
                         type="text"
-                        value={log.running?.avgTime || ''}
+                        defaultValue={log.running?.avgTime || ''}
                         onChange={(e) => updateRunningLog('avgTime', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="23s"
@@ -736,8 +945,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Rest Between (sec)</label>
                       <input
+                        key={`restTime-${logDate.toISOString()}`}
                         type="text"
-                        value={log.running?.restTime || ''}
+                        defaultValue={log.running?.restTime || ''}
                         onChange={(e) => updateRunningLog('restTime', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="90-120"
@@ -746,10 +956,11 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">RPE (1-10)</label>
                       <input
+                        key={`sprint-rpe-${logDate.toISOString()}`}
                         type="number"
                         min="1"
                         max="10"
-                        value={log.running?.rpe || ''}
+                        defaultValue={log.running?.rpe || ''}
                         onChange={(e) => updateRunningLog('rpe', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="9"
@@ -760,8 +971,9 @@ export default function WorkoutTracker() {
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Warm-up Duration (min)</label>
                     <input
+                      key={`warmupDuration-${logDate.toISOString()}`}
                       type="number"
-                      value={log.running?.warmupDuration || ''}
+                      defaultValue={log.running?.warmupDuration || ''}
                       onChange={(e) => updateRunningLog('warmupDuration', e.target.value)}
                       className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="10"
@@ -771,8 +983,9 @@ export default function WorkoutTracker() {
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Location</label>
                     <input
+                      key={`sprint-route-${logDate.toISOString()}`}
                       type="text"
-                      value={log.running?.route || ''}
+                      defaultValue={log.running?.route || ''}
                       onChange={(e) => updateRunningLog('route', e.target.value)}
                       className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="Track, field, etc."
@@ -794,8 +1007,9 @@ export default function WorkoutTracker() {
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">WOD Name/Description</label>
                     <input
+                      key={`wodName-${logDate.toISOString()}`}
                       type="text"
-                      value={log.exercises[0]?.wodName || ''}
+                      defaultValue={log.exercises[0]?.wodName || ''}
                       onChange={(e) => updateExerciseLog(0, 'wodName', e.target.value)}
                       className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder="e.g., Fran, AMRAP 20..."
@@ -806,8 +1020,9 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Time / Score</label>
                       <input
+                        key={`score-${logDate.toISOString()}`}
                         type="text"
-                        value={log.exercises[0]?.score || ''}
+                        defaultValue={log.exercises[0]?.score || ''}
                         onChange={(e) => updateExerciseLog(0, 'score', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                         placeholder="12:30 / 5 rounds"
@@ -816,7 +1031,8 @@ export default function WorkoutTracker() {
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Rx / Scaled</label>
                       <select
-                        value={log.exercises[0]?.rx || ''}
+                        key={`rx-${logDate.toISOString()}`}
+                        defaultValue={log.exercises[0]?.rx || ''}
                         onChange={(e) => updateExerciseLog(0, 'rx', e.target.value)}
                         className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                       >
@@ -835,7 +1051,12 @@ export default function WorkoutTracker() {
             <div>
               <label className="text-sm text-gray-400 block mb-2">General Notes</label>
               <textarea
-                value={log.notes || ''}
+                key={`general-notes-${logDate.toISOString()}`}
+                defaultValue={log.notes || ''}
+                onFocus={(e) => {
+                  // Select all text on focus for easy overwriting
+                  e.target.select();
+                }}
                 onChange={(e) => updateGeneralNotes(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
                 placeholder="How did the workout feel? Any PRs? Issues?"
@@ -844,7 +1065,7 @@ export default function WorkoutTracker() {
 
             {/* Save Button */}
             <button
-              onClick={() => setShowLogModal(false)}
+              onClick={handleClose}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
             >
               <Save className="w-5 h-5" />
@@ -859,6 +1080,24 @@ export default function WorkoutTracker() {
   // Main app
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+      {/* Progress Dashboard Modal */}
+      {showProgressDashboard && (
+        <ProgressDashboard
+          workoutLogs={workoutLogs}
+          workoutProgram={workoutProgram}
+          onClose={() => setShowProgressDashboard(false)}
+        />
+      )}
+
+      {/* Schedule Config Modal */}
+      {showScheduleConfig && (
+        <ScheduleConfig
+          currentSchedule={workoutProgram}
+          onSave={handleScheduleSave}
+          onClose={() => setShowScheduleConfig(false)}
+        />
+      )}
+
       {/* Log Modal */}
       <LogModal />
 
@@ -892,6 +1131,25 @@ export default function WorkoutTracker() {
                 className="hidden"
               />
             </label>
+            <button
+              onClick={() => setShowScheduleConfig(!showScheduleConfig)}
+              className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm ${
+                showScheduleConfig ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+              title="Configure your weekly workout schedule"
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Schedule</span>
+            </button>
+            <button
+              onClick={() => setShowProgressDashboard(!showProgressDashboard)}
+              className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm ${
+                showProgressDashboard ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span className="hidden sm:inline">Progress</span>
+            </button>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm ${
@@ -1026,13 +1284,13 @@ export default function WorkoutTracker() {
         {/* Weekly Calendar */}
         <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
           {weekDates.map((date, index) => {
-            const workout = workoutProgram[index];
+            const workout = getWorkoutForDate(date);
             const log = getDateLog(date);
             
             return (
               <div
                 key={index}
-                className={`rounded-xl border transition-all ${
+                className={`rounded-xl border transition-all flex flex-col ${
                   isToday(date) 
                     ? 'border-blue-500 ring-2 ring-blue-500/30' 
                     : 'border-gray-700'
@@ -1045,10 +1303,12 @@ export default function WorkoutTracker() {
                     <div className="text-sm opacity-80">{hebrewDays[index]} • {date.getDate()}</div>
                   </div>
                   {log.completed !== null && (
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      log.completed ? 'bg-green-500' : 'bg-red-500'
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                      log.completed 
+                        ? 'bg-white text-green-600 border-white shadow-lg' 
+                        : 'bg-white text-red-600 border-white shadow-lg'
                     }`}>
-                      {log.completed ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+                      {log.completed ? <Check className="w-5 h-5 stroke-[3]" /> : <X className="w-5 h-5 stroke-[3]" />}
                     </div>
                   )}
                 </div>
@@ -1060,7 +1320,7 @@ export default function WorkoutTracker() {
                 </div>
 
                 {/* Exercises Preview */}
-                <div className="p-4 space-y-2">
+                <div className="p-4 space-y-2 flex-1">
                   {editMode ? (
                     <>
                       {workout.exercises.map((exercise, exIndex) => (

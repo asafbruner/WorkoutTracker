@@ -1,0 +1,16 @@
+
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#1e40af" rx="76.8"/>
+  <g transform="translate(256, 256)">
+    <!-- Left weight -->
+    <rect x="-204.8" y="-76.8" width="61.44" height="153.6" fill="white" rx="10.24"/>
+    <!-- Right weight -->
+    <rect x="143.36" y="-76.8" width="61.44" height="153.6" fill="white" rx="10.24"/>
+    <!-- Bar -->
+    <rect x="-143.36" y="-20.48" width="286.72" height="40.96" fill="white" rx="7.68"/>
+    <!-- Left grip detail -->
+    <circle cx="-174.08" cy="0" r="92.16" fill="white" opacity="0.3"/>
+    <!-- Right grip detail -->
+    <circle cx="174.08" cy="0" r="92.16" fill="white" opacity="0.3"/>
+  </g>
+</svg>
