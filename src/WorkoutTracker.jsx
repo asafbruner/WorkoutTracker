@@ -88,14 +88,16 @@ export default function WorkoutTracker() {
   const [workoutProgram, setWorkoutProgram] = useState(defaultWorkouts);
   const [weeklySchedules, setWeeklySchedules] = useState({}); // Store per-week schedules
   const [workoutLogs, setWorkoutLogs] = useState({});
-  const [editMode, setEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showProgressDashboard, setShowProgressDashboard] = useState(false);
   const [showScheduleConfig, setShowScheduleConfig] = useState(false);
   const [logDate, setLogDate] = useState(null);
+  const [editDate, setEditDate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('');
+  const [viewMode, setViewMode] = useState('weekly'); // 'daily', 'weekly', 'monthly'
   const saveTimeoutRef = useRef(null);
 
   // Get week dates
@@ -113,7 +115,56 @@ export default function WorkoutTracker() {
     return dates;
   }, []);
 
+  // Get month dates (all days in current month with padding to start on Sunday)
+  const getMonthDates = useCallback((date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    // Create dates at noon to avoid timezone issues
+    const firstDay = new Date(year, month, 1, 12, 0, 0);
+    const lastDay = new Date(year, month + 1, 0, 12, 0, 0);
+    
+    const dates = [];
+    
+    // Add padding days from previous month to start on Sunday
+    const firstDayOfWeek = firstDay.getDay();
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const paddingDate = new Date(firstDay);
+      paddingDate.setDate(paddingDate.getDate() - (i + 1));
+      dates.push({ date: paddingDate, isPadding: true });
+    }
+    
+    // Add all days in current month
+    for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+      dates.push({ date: new Date(d), isPadding: false });
+    }
+    
+    // Add padding days from next month to complete the week
+    const lastDayOfWeek = lastDay.getDay();
+    if (lastDayOfWeek < 6) {
+      for (let i = 1; i <= 6 - lastDayOfWeek; i++) {
+        const paddingDate = new Date(lastDay);
+        paddingDate.setDate(paddingDate.getDate() + i);
+        dates.push({ date: paddingDate, isPadding: true });
+      }
+    }
+    
+    return dates;
+  }, []);
+
+  // Get display dates based on view mode
+  const getDisplayDates = useCallback(() => {
+    if (viewMode === 'daily') {
+      return [new Date(currentWeek)];
+    } else if (viewMode === 'weekly') {
+      return getWeekDates(currentWeek);
+    } else {
+      // For monthly view, return raw dates array without wrapping
+      return getMonthDates(currentWeek);
+    }
+  }, [viewMode, currentWeek, getWeekDates, getMonthDates]);
+
   const weekDates = getWeekDates(currentWeek);
+  const displayDates = getDisplayDates();
 
   // Get week key for storing per-week schedules
   const getWeekKey = useCallback((date) => {
@@ -261,48 +312,40 @@ export default function WorkoutTracker() {
     await updateLog(date, { completed: value });
   };
 
-  // Update workout program
-  const updateWorkoutProgram = async (dayIndex, updates) => {
-    const newProgram = {
-      ...workoutProgram,
-      [dayIndex]: {
-        ...workoutProgram[dayIndex],
-        ...updates
-      }
-    };
-    setWorkoutProgram(newProgram);
-    await saveData('workout_program', newProgram);
-  };
-
-  // Add exercise to day
-  const addExercise = async (dayIndex) => {
-    const newExercises = [
-      ...workoutProgram[dayIndex].exercises,
-      { name: 'New Exercise', sets: '', targetWeight: '', targetReps: '', notes: '' }
-    ];
-    await updateWorkoutProgram(dayIndex, { exercises: newExercises });
-  };
-
-  // Remove exercise from day
-  const removeExercise = async (dayIndex, exerciseIndex) => {
-    const newExercises = workoutProgram[dayIndex].exercises.filter((_, i) => i !== exerciseIndex);
-    await updateWorkoutProgram(dayIndex, { exercises: newExercises });
-  };
-
-  // Update exercise in program
-  const updateExercise = async (dayIndex, exerciseIndex, updates) => {
-    const newExercises = workoutProgram[dayIndex].exercises.map((ex, i) => 
-      i === exerciseIndex ? { ...ex, ...updates } : ex
-    );
-    await updateWorkoutProgram(dayIndex, { exercises: newExercises });
-  };
-
-  // Navigate weeks
-  const navigateWeek = (direction) => {
+  // Navigate based on view mode
+  const navigate = (direction) => {
     const newDate = new Date(currentWeek);
-    newDate.setDate(newDate.getDate() + (direction * 7));
+    if (viewMode === 'daily') {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (viewMode === 'weekly') {
+      newDate.setDate(newDate.getDate() + (direction * 7));
+    } else { // monthly
+      newDate.setMonth(newDate.getMonth() + direction);
+    }
     setCurrentWeek(newDate);
   };
+
+  // Get period title based on view mode
+  const getPeriodTitle = () => {
+    if (viewMode === 'daily') {
+      return currentWeek.toLocaleDateString('en-IL', { 
+        weekday: 'long',
+        month: 'long', 
+        day: 'numeric',
+        year: 'numeric' 
+      });
+    } else if (viewMode === 'weekly') {
+      const dates = getWeekDates(currentWeek);
+      return {
+        main: dates[0].toLocaleDateString('en-IL', { month: 'long', year: 'numeric' }),
+        sub: `${dates[0].toLocaleDateString('en-IL', { day: 'numeric', month: 'short' })} - ${dates[6].toLocaleDateString('en-IL', { day: 'numeric', month: 'short' })}`
+      };
+    } else { // monthly
+      return currentWeek.toLocaleDateString('en-IL', { month: 'long', year: 'numeric' });
+    }
+  };
+
+  const periodTitle = getPeriodTitle();
 
   // Check if date is today
   const isToday = (date) => {
@@ -321,6 +364,71 @@ export default function WorkoutTracker() {
   const openLogModal = (date) => {
     setLogDate(date);
     setShowLogModal(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (date) => {
+    setEditDate(date);
+    setShowEditModal(true);
+  };
+
+  // Update workout for specific date
+  const updateWorkoutForDate = async (date, updates, applyToFuture = false) => {
+    const weekKey = getWeekKey(date);
+    const dayIndex = date.getDay();
+    const currentWorkout = getWorkoutForDate(date);
+    
+    const updatedWorkout = {
+      ...currentWorkout,
+      ...updates
+    };
+
+    if (applyToFuture) {
+      // Update the default program for this day of week
+      const newProgram = {
+        ...workoutProgram,
+        [dayIndex]: updatedWorkout
+      };
+      setWorkoutProgram(newProgram);
+      await saveData('workout_program', newProgram);
+      setSaveStatus('✓ Applied to all future occurrences');
+    } else {
+      // Update only for the current week
+      const newWeeklySchedules = {
+        ...weeklySchedules,
+        [weekKey]: {
+          ...(weeklySchedules[weekKey] || {}),
+          [dayIndex]: updatedWorkout
+        }
+      };
+      setWeeklySchedules(newWeeklySchedules);
+      await saveData('weekly_schedules', newWeeklySchedules);
+      setSaveStatus('✓ Updated for this week');
+    }
+    
+    setTimeout(() => setSaveStatus(''), 2000);
+  };
+
+  // Reset workout to default
+  const resetWorkoutToDefault = async (date) => {
+    const weekKey = getWeekKey(date);
+    const dayIndex = date.getDay();
+    
+    // Remove custom schedule for this day in this week
+    const newWeeklySchedules = { ...weeklySchedules };
+    if (newWeeklySchedules[weekKey]) {
+      delete newWeeklySchedules[weekKey][dayIndex];
+      
+      // If week schedule is now empty, remove it entirely
+      if (Object.keys(newWeeklySchedules[weekKey]).length === 0) {
+        delete newWeeklySchedules[weekKey];
+      }
+    }
+    
+    setWeeklySchedules(newWeeklySchedules);
+    await saveData('weekly_schedules', newWeeklySchedules);
+    setSaveStatus('✓ Reset to default');
+    setTimeout(() => setSaveStatus(''), 2000);
   };
 
   // Handle schedule save for current week only
@@ -477,6 +585,212 @@ export default function WorkoutTracker() {
   if (!isAuthenticated) {
     return <LoginScreen onLogin={handleLogin} />;
   }
+
+  // Edit Workout Modal Component
+  const EditWorkoutModal = () => {
+    if (!showEditModal || !editDate) return null;
+    
+    const workout = getWorkoutForDate(editDate);
+    const [localWorkout, setLocalWorkout] = useState(workout);
+    const [applyToFuture, setApplyToFuture] = useState(false);
+
+    const handleSave = async () => {
+      await updateWorkoutForDate(editDate, localWorkout, applyToFuture);
+      setShowEditModal(false);
+    };
+
+    const handleReset = async () => {
+      await resetWorkoutToDefault(editDate);
+      setShowEditModal(false);
+    };
+
+    const addExerciseToWorkout = () => {
+      setLocalWorkout({
+        ...localWorkout,
+        exercises: [
+          ...localWorkout.exercises,
+          { name: 'New Exercise', sets: '', targetWeight: '', targetReps: '', notes: '' }
+        ]
+      });
+    };
+
+    const removeExerciseFromWorkout = (index) => {
+      setLocalWorkout({
+        ...localWorkout,
+        exercises: localWorkout.exercises.filter((_, i) => i !== index)
+      });
+    };
+
+    const updateExerciseInWorkout = (index, field, value) => {
+      setLocalWorkout({
+        ...localWorkout,
+        exercises: localWorkout.exercises.map((ex, i) => 
+          i === index ? { ...ex, [field]: value } : ex
+        )
+      });
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700 my-4">
+          {/* Modal Header */}
+          <div className={`${workout.color} px-6 py-4 rounded-t-2xl sticky top-0 z-10`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Edit Workout</h2>
+                <p className="text-white/80">
+                  {editDate.toLocaleDateString('en-IL', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-white/80 hover:text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {/* Workout Type Display (read-only as per requirements) */}
+            <div className="bg-gray-700/50 rounded-xl p-4">
+              <div className="text-sm text-gray-400 mb-1">Workout Type</div>
+              <div className="font-semibold text-white">{workout.typeEn}</div>
+              <div className="text-sm text-gray-400">{workout.type}</div>
+              <div className="text-xs text-gray-500 mt-2">
+                Note: To change workout type, use the Schedule feature
+              </div>
+            </div>
+
+            {/* Exercises Editor */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-400" />
+                Exercises
+              </h3>
+              
+              {localWorkout.exercises.map((exercise, idx) => (
+                <div key={idx} className="bg-gray-700/50 rounded-xl p-4 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-semibold text-white">Exercise {idx + 1}</h4>
+                    <button
+                      onClick={() => removeExerciseFromWorkout(idx)}
+                      className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Remove
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Exercise Name</label>
+                    <input
+                      type="text"
+                      value={exercise.name}
+                      onChange={(e) => updateExerciseInWorkout(idx, 'name', e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g., Back Squats"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Sets / Reps Description</label>
+                    <input
+                      type="text"
+                      value={exercise.sets}
+                      onChange={(e) => updateExerciseInWorkout(idx, 'sets', e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g., 3 sets: 5 reps"
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">Target Weight (kg)</label>
+                      <input
+                        type="text"
+                        value={exercise.targetWeight || ''}
+                        onChange={(e) => updateExerciseInWorkout(idx, 'targetWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g., 70"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">Target Reps</label>
+                      <input
+                        type="text"
+                        value={exercise.targetReps || ''}
+                        onChange={(e) => updateExerciseInWorkout(idx, 'targetReps', e.target.value)}
+                        className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g., 20"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Notes</label>
+                    <textarea
+                      value={exercise.notes || ''}
+                      onChange={(e) => updateExerciseInWorkout(idx, 'notes', e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                      placeholder="Additional notes about this exercise..."
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={addExerciseToWorkout}
+                className="w-full py-3 border-2 border-dashed border-gray-600 rounded-xl text-gray-400 hover:text-white hover:border-gray-500 flex items-center justify-center gap-2 font-medium transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                Add Exercise
+              </button>
+            </div>
+
+            {/* Apply to Future Option */}
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={applyToFuture}
+                  onChange={(e) => setApplyToFuture(e.target.checked)}
+                  className="mt-1 w-5 h-5 rounded border-gray-600 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-semibold text-white">Apply to all future occurrences</div>
+                  <div className="text-sm text-gray-400 mt-1">
+                    {applyToFuture 
+                      ? `This will update the default ${workout.typeEn} workout for all future ${englishDays[editDate.getDay()]}s`
+                      : 'Changes will only apply to this week\'s workout'
+                    }
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleReset}
+                className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <X className="w-5 h-5" />
+                Reset to Default
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Log Modal Component
   const LogModal = () => {
@@ -1101,6 +1415,9 @@ export default function WorkoutTracker() {
       {/* Log Modal */}
       <LogModal />
 
+      {/* Edit Workout Modal */}
+      <EditWorkoutModal />
+
       {/* Header */}
       <header className="bg-gray-800/50 backdrop-blur border-b border-gray-700 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
@@ -1158,15 +1475,6 @@ export default function WorkoutTracker() {
             >
               <History className="w-4 h-4" />
               <span className="hidden sm:inline">History</span>
-            </button>
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm ${
-                editMode ? 'bg-orange-600' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            >
-              <Edit3 className="w-4 h-4" />
-              <span className="hidden sm:inline">{editMode ? 'Done' : 'Edit'}</span>
             </button>
             <button
               onClick={handleLogout}
@@ -1255,52 +1563,134 @@ export default function WorkoutTracker() {
           </div>
         )}
 
-        {/* Week Navigation */}
+        {/* View Mode Switcher */}
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex bg-gray-700 rounded-lg p-1 gap-1">
+            <button
+              onClick={() => setViewMode('daily')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'daily' 
+                  ? 'bg-blue-600 text-white shadow-lg' 
+                  : 'text-gray-300 hover:text-white hover:bg-gray-600'
+              }`}
+            >
+              Daily
+            </button>
+            <button
+              onClick={() => setViewMode('weekly')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'weekly' 
+                  ? 'bg-blue-600 text-white shadow-lg' 
+                  : 'text-gray-300 hover:text-white hover:bg-gray-600'
+              }`}
+            >
+              Weekly
+            </button>
+            <button
+              onClick={() => setViewMode('monthly')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'monthly' 
+                  ? 'bg-blue-600 text-white shadow-lg' 
+                  : 'text-gray-300 hover:text-white hover:bg-gray-600'
+              }`}
+            >
+              Monthly
+            </button>
+          </div>
+        </div>
+
+        {/* Period Navigation */}
         <div className="flex items-center justify-between mb-6">
           <button
-            onClick={() => navigateWeek(-1)}
+            onClick={() => navigate(-1)}
             className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
           
           <div className="text-center">
-            <h2 className="text-2xl font-bold">
-              {weekDates[0].toLocaleDateString('en-IL', { month: 'long', year: 'numeric' })}
-            </h2>
-            <p className="text-gray-400">
-              {weekDates[0].toLocaleDateString('en-IL', { day: 'numeric', month: 'short' })} - {weekDates[6].toLocaleDateString('en-IL', { day: 'numeric', month: 'short' })}
-            </p>
+            {viewMode === 'weekly' ? (
+              <>
+                <h2 className="text-2xl font-bold">{periodTitle.main}</h2>
+                <p className="text-gray-400">{periodTitle.sub}</p>
+              </>
+            ) : (
+              <h2 className="text-2xl font-bold">{periodTitle}</h2>
+            )}
           </div>
           
           <button
-            onClick={() => navigateWeek(1)}
+            onClick={() => navigate(1)}
             className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
           >
             <ChevronRight className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Weekly Calendar */}
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
-          {weekDates.map((date, index) => {
+        {/* Calendar View */}
+        <div className={`grid gap-4 ${
+          viewMode === 'daily' 
+            ? 'grid-cols-1 max-w-2xl mx-auto' 
+            : viewMode === 'weekly'
+            ? 'grid-cols-1 md:grid-cols-7'
+            : 'grid-cols-7'
+        }`}>
+          {displayDates.map((item, index) => {
+            // Handle both date formats (monthly has {date, isPadding}, others have just date)
+            let date, isPadding;
+            
+            if (viewMode === 'monthly') {
+              // Monthly view items are objects with {date, isPadding}
+              date = item.date;
+              isPadding = item.isPadding;
+            } else {
+              // Daily and weekly views items are just Date objects
+              date = item;
+              isPadding = false;
+            }
+            
+            // Always use getWorkoutForDate to ensure consistency across all views
             const workout = getWorkoutForDate(date);
             const log = getDateLog(date);
+            
+            // Debug for December 14, 2025
+            if (date.getDate() === 14 && date.getMonth() === 11 && date.getFullYear() === 2025) {
+              console.log('Dec 14, 2025 in', viewMode, 'view:', {
+                dateISO: date.toISOString(),
+                dateKey: date.toISOString().split('T')[0],
+                logCompleted: log.completed,
+                hasLog: log.completed !== null
+              });
+            }
             
             return (
               <div
                 key={index}
-                className={`rounded-xl border transition-all flex flex-col ${
+                className={`rounded-xl border transition-all ${
+                  viewMode === 'daily' ? 'flex flex-col' : 'flex flex-col h-full'
+                } ${
                   isToday(date) 
                     ? 'border-blue-500 ring-2 ring-blue-500/30' 
+                    : isPadding
+                    ? 'border-gray-800 opacity-40'
                     : 'border-gray-700'
-                } bg-gray-800`}
+                } ${isPadding ? 'bg-gray-800/30' : 'bg-gray-800'}`}
               >
                 {/* Day Header */}
-                <div className={`${workout.color} px-4 py-3 rounded-t-xl flex items-center justify-between`}>
+                <div className={`${workout.color} px-4 py-3 rounded-t-xl flex items-center justify-between ${isPadding ? 'opacity-50' : ''}`}>
                   <div>
-                    <div className="font-bold text-lg">{englishDays[index]}</div>
-                    <div className="text-sm opacity-80">{hebrewDays[index]} • {date.getDate()}</div>
+                    <div className="font-bold text-lg">
+                      {viewMode === 'monthly' 
+                        ? date.toLocaleDateString('en-IL', { weekday: 'short' })
+                        : englishDays[date.getDay()]
+                      }
+                    </div>
+                    <div className="text-sm opacity-80">
+                      {viewMode === 'monthly'
+                        ? date.getDate()
+                        : `${hebrewDays[date.getDay()]} • ${date.getDate()}`
+                      }
+                    </div>
                   </div>
                   {log.completed !== null && (
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
@@ -1314,70 +1704,67 @@ export default function WorkoutTracker() {
                 </div>
 
                 {/* Workout Type */}
-                <div className="px-4 py-2 border-b border-gray-700">
-                  <div className="font-semibold">{workout.typeEn}</div>
-                  <div className="text-sm text-gray-400">{workout.type}</div>
-                </div>
+                {!isPadding && (
+                  <div className="px-4 py-2 border-b border-gray-700">
+                    <div className="font-semibold">{workout.typeEn}</div>
+                    <div className="text-sm text-gray-400">{workout.type}</div>
+                  </div>
+                )}
 
                 {/* Exercises Preview */}
-                <div className="p-4 space-y-2 flex-1">
-                  {editMode ? (
-                    <>
-                      {workout.exercises.map((exercise, exIndex) => (
-                        <div key={exIndex} className="space-y-2 bg-gray-700/50 p-2 rounded-lg">
-                          <input
-                            value={exercise.name}
-                            onChange={(e) => updateExercise(index, exIndex, { name: e.target.value })}
-                            className="w-full px-2 py-1 bg-gray-600 rounded text-white text-sm"
-                            placeholder="Exercise name"
-                          />
-                          <input
-                            value={exercise.sets}
-                            onChange={(e) => updateExercise(index, exIndex, { sets: e.target.value })}
-                            className="w-full px-2 py-1 bg-gray-600 rounded text-white text-sm"
-                            placeholder="Sets/Reps"
-                          />
-                          <button
-                            onClick={() => removeExercise(index, exIndex)}
-                            className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            Remove
-                          </button>
+                {!isPadding && (
+                  <div className={`p-4 space-y-2 ${viewMode === 'daily' ? '' : 'flex-1'}`}>
+                    {viewMode === 'monthly' ? (
+                      // Condensed view for monthly
+                      workout.typeEn !== 'Rest' && (
+                        <div className="text-xs text-gray-400">
+                          {workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}
                         </div>
-                      ))}
-                      <button
-                        onClick={() => addExercise(index)}
-                        className="w-full py-2 border border-dashed border-gray-600 rounded-lg text-gray-400 hover:text-white hover:border-gray-500 flex items-center justify-center gap-2 text-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Exercise
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {workout.exercises.slice(0, 3).map((exercise, exIndex) => (
-                        <div key={exIndex} className="text-sm">
-                          <div className="font-medium text-white truncate">{exercise.name}</div>
-                          {exercise.sets && <div className="text-gray-400 text-xs truncate">{exercise.sets}</div>}
-                        </div>
-                      ))}
-                      {workout.exercises.length > 3 && (
-                        <div className="text-xs text-gray-500">+{workout.exercises.length - 3} more...</div>
-                      )}
-                    </>
-                  )}
-                </div>
+                      )
+                    ) : viewMode === 'daily' ? (
+                      // Show ALL exercises in daily view
+                      <>
+                        {workout.exercises.map((exercise, exIndex) => (
+                          <div key={exIndex} className="text-sm">
+                            <div className="font-medium text-white">{exercise.name}</div>
+                            {exercise.sets && <div className="text-gray-400 text-xs">{exercise.sets}</div>}
+                            {exercise.notes && <div className="text-gray-500 text-xs mt-1">{exercise.notes}</div>}
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      // Preview for weekly (show first 3)
+                      <>
+                        {workout.exercises.slice(0, 3).map((exercise, exIndex) => (
+                          <div key={exIndex} className="text-sm">
+                            <div className="font-medium text-white truncate">{exercise.name}</div>
+                            {exercise.sets && <div className="text-gray-400 text-xs truncate">{exercise.sets}</div>}
+                          </div>
+                        ))}
+                        {workout.exercises.length > 3 && (
+                          <div className="text-xs text-gray-500">+{workout.exercises.length - 3} more...</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
-                {/* Log Button */}
-                {!editMode && workout.typeEn !== 'Rest' && (
-                  <div className="px-4 pb-4">
+                {/* Log and Edit Buttons */}
+                {!isPadding && workout.typeEn !== 'Rest' && (
+                  <div className="px-4 pb-4 space-y-2">
                     <button
                       onClick={() => openLogModal(date)}
                       className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
                       <ClipboardList className="w-4 h-4" />
                       Log Workout
+                    </button>
+                    <button
+                      onClick={() => openEditModal(date)}
+                      className="w-full py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                      Edit Workout
                     </button>
                   </div>
                 )}
@@ -1399,7 +1786,10 @@ export default function WorkoutTracker() {
           <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
             <div className="text-gray-400 text-sm mb-1">Strength</div>
             <div className="text-2xl font-bold text-blue-400">
-              {weekDates.filter((d, i) => workoutProgram[i].typeEn === 'Strength' && getDateLog(d).completed === true).length}/2
+              {weekDates.filter(d => {
+                const workout = getWorkoutForDate(d);
+                return workout.typeEn === 'Strength' && getDateLog(d).completed === true;
+              }).length}/2
             </div>
             <div className="text-gray-500 text-xs">this week</div>
           </div>
@@ -1407,7 +1797,10 @@ export default function WorkoutTracker() {
           <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
             <div className="text-gray-400 text-sm mb-1">CrossFit</div>
             <div className="text-2xl font-bold text-orange-400">
-              {weekDates.filter((d, i) => workoutProgram[i].typeEn === 'CrossFit' && getDateLog(d).completed === true).length}/2
+              {weekDates.filter(d => {
+                const workout = getWorkoutForDate(d);
+                return workout.typeEn === 'CrossFit' && getDateLog(d).completed === true;
+              }).length}/2
             </div>
             <div className="text-gray-500 text-xs">this week</div>
           </div>
@@ -1415,7 +1808,17 @@ export default function WorkoutTracker() {
           <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
             <div className="text-gray-400 text-sm mb-1">Running</div>
             <div className="text-2xl font-bold text-emerald-400">
-              {weekDates.filter((d, i) => (workoutProgram[i].typeEn === 'Sprints' || workoutProgram[i].typeEn === 'Long Run') && getDateLog(d).completed === true).length}/2
+              {weekDates.filter(d => {
+                const workout = getWorkoutForDate(d);
+                const log = getDateLog(d);
+                // Check if it's any running-related workout
+                const isRunning = workout.typeEn === 'Sprints' || 
+                                 workout.typeEn === 'Long Run' ||
+                                 workout.typeEn?.toLowerCase().includes('run') ||
+                                 workout.typeEn?.toLowerCase().includes('fartlek') ||
+                                 workout.type?.includes('ריצה'); // Hebrew for "running"
+                return isRunning && log.completed === true;
+              }).length}/2
             </div>
             <div className="text-gray-500 text-xs">this week</div>
           </div>
