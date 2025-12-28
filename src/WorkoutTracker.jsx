@@ -796,8 +796,7 @@ export default function WorkoutTracker() {
   const LogModal = () => {
     if (!showLogModal || !logDate) return null;
     
-    const dayIndex = logDate.getDay();
-    const workout = workoutProgram[dayIndex];
+    const workout = getWorkoutForDate(logDate);
     const log = getDateLog(logDate);
     const isStrength = workout.typeEn === 'Strength';
     const isRunning = workout.typeEn === 'Sprints' || workout.typeEn === 'Long Run';
@@ -1722,23 +1721,35 @@ export default function WorkoutTracker() {
                         </div>
                       )
                     ) : viewMode === 'daily' ? (
-                      // Show ALL exercises in daily view
+                      // Show ALL exercises in daily view with target weights
                       <>
                         {workout.exercises.map((exercise, exIndex) => (
                           <div key={exIndex} className="text-sm">
                             <div className="font-medium text-white">{exercise.name}</div>
                             {exercise.sets && <div className="text-gray-400 text-xs">{exercise.sets}</div>}
+                            {exercise.targetWeight && (
+                              <div className="text-xs text-blue-400">Target: {exercise.targetWeight}kg</div>
+                            )}
+                            {exercise.targetReps && (
+                              <div className="text-xs text-blue-400">Target: {exercise.targetReps} reps</div>
+                            )}
                             {exercise.notes && <div className="text-gray-500 text-xs mt-1">{exercise.notes}</div>}
                           </div>
                         ))}
                       </>
                     ) : (
-                      // Preview for weekly (show first 3)
+                      // Preview for weekly (show first 3) with target weights
                       <>
                         {workout.exercises.slice(0, 3).map((exercise, exIndex) => (
                           <div key={exIndex} className="text-sm">
                             <div className="font-medium text-white truncate">{exercise.name}</div>
                             {exercise.sets && <div className="text-gray-400 text-xs truncate">{exercise.sets}</div>}
+                            {exercise.targetWeight && (
+                              <div className="text-xs text-blue-400">Target: {exercise.targetWeight}kg</div>
+                            )}
+                            {exercise.targetReps && (
+                              <div className="text-xs text-blue-400">Target: {exercise.targetReps} reps</div>
+                            )}
                           </div>
                         ))}
                         {workout.exercises.length > 3 && (
