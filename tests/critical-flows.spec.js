@@ -18,6 +18,19 @@ test.describe('Critical Production Flows', () => {
     // Wait for app to initialize
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
+    
+    // Login automatically for most tests (unless testing login itself)
+    const passwordField = page.locator('input[type="password"]');
+    const isLoginVisible = await passwordField.isVisible().catch(() => false);
+    
+    if (isLoginVisible) {
+      await passwordField.fill('asaf2024');
+      await page.click('button:has-text("Login")');
+      await page.waitForTimeout(1000);
+      
+      // Verify login successful
+      await page.waitForSelector('button:has-text("Logout")', { timeout: 5000 });
+    }
   });
 
   test('should load app without errors', async ({ page }) => {
@@ -45,42 +58,13 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should login successfully or already be logged in', async ({ page }) => {
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    // Check if already logged in
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    
-    if (!isLoggedIn) {
-      // Wait for login screen
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.waitFor({ timeout: 5000 });
-      
-      // Clear and enter password
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
-    // Should see main app
+    // Should already be logged in from beforeEach
     await expect(page.locator('text=Workout Tracker')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('button:has-text("Logout")')).toBeVisible();
   });
 
   test('should open and close workout log modal', async ({ page }) => {
-    // Ensure logged in
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
+    // Already logged in from beforeEach
     // Find and click a "Log Workout" button
     const logButtons = page.locator('button:has-text("Log Workout")');
     await logButtons.first().waitFor({ timeout: 5000 });
@@ -99,18 +83,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should mark workout as completed', async ({ page }) => {
-    // Ensure logged in
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
+    // Already logged in from beforeEach
     // Open log modal
     const logButtons = page.locator('button:has-text("Log Workout")');
     await logButtons.first().click();
@@ -130,22 +103,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should log strength workout with weights', async ({ page }) => {
-    // Check if already logged in
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible({ timeout: 5000 }).catch(() => false);
-    
-    if (!isLoggedIn) {
-      // Wait for login screen
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
-    // Wait for main app to load
-    await page.waitForSelector('button:has-text("Logout")', { timeout: 10000 });
-    
+    // Already logged in from beforeEach
     // Find a strength day (Sunday or Thursday)
     const strengthButtons = page.locator('button:has-text("Log Workout")');
     await strengthButtons.first().click();
@@ -174,22 +132,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should navigate between weeks', async ({ page }) => {
-    // Check if already logged in
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible({ timeout: 5000 }).catch(() => false);
-    
-    if (!isLoggedIn) {
-      // Wait for login screen
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
-    // Wait for main app to load
-    await page.waitForSelector('button:has-text("Logout")', { timeout: 10000 });
-    
+    // Already logged in from beforeEach
     // Get current week display - look for h2 with month and year
     const weekDisplay = page.locator('h2').filter({ hasText: /\d{4}/ }).first();
     await weekDisplay.waitFor({ timeout: 5000 });
@@ -246,22 +189,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should open and close history panel', async ({ page }) => {
-    // Check if already logged in
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible({ timeout: 5000 }).catch(() => false);
-    
-    if (!isLoggedIn) {
-      // Wait for login screen
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
-    // Wait for main app to load
-    await page.waitForSelector('button:has-text("Logout")', { timeout: 10000 });
-    
+    // Already logged in from beforeEach
     // Click history button
     await page.click('button:has-text("History")');
     await page.waitForTimeout(500);
@@ -278,22 +206,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should show weekly stats', async ({ page }) => {
-    // Check if already logged in
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible({ timeout: 5000 }).catch(() => false);
-    
-    if (!isLoggedIn) {
-      // Wait for login screen
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
-    // Wait for main app to load
-    await page.waitForSelector('button:has-text("Logout")', { timeout: 10000 });
-    
+    // Already logged in from beforeEach
     // Scroll to stats section
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(500);
@@ -306,18 +219,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should logout successfully', async ({ page }) => {
-    // Ensure logged in
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1000);
-    }
-    
+    // Already logged in from beforeEach
     // Logout
     await page.click('button:has-text("Logout")');
     await page.waitForTimeout(500);
@@ -328,16 +230,9 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should handle incorrect password', async ({ page }) => {
-    // This test requires the login screen, so skip if already logged in
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const hasLoginScreen = await page.locator('input[type="password"]').isVisible();
-    if (!hasLoginScreen) {
-      // Logout first
-      await page.click('button:has-text("Logout")');
-      await page.waitForTimeout(500);
-    }
+    // This test needs to start from login screen, so logout first
+    await page.click('button:has-text("Logout")');
+    await page.waitForTimeout(500);
     
     const passwordField = page.locator('input[type="password"]');
     await passwordField.fill('wrongpassword');
@@ -349,21 +244,9 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should persist login state on refresh', async ({ page }) => {
-    // Ensure logged in first
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1500);
-      
-      // Verify we're logged in before refresh
-      await expect(page.locator('button:has-text("Logout")')).toBeVisible({ timeout: 10000 });
-    }
+    // Already logged in from beforeEach
+    // Verify we're logged in before refresh
+    await expect(page.locator('button:has-text("Logout")')).toBeVisible({ timeout: 10000 });
     
     // Wait a bit for state to be persisted
     await page.waitForTimeout(500);
@@ -390,18 +273,9 @@ test.describe('Critical Production Flows', () => {
     // Set mobile viewport
     await page.setViewportSize({ width: 375, height: 667 });
     
-    // Ensure logged in
-    await page.goto('http://localhost:5173');
+    // Reload page with mobile viewport
+    await page.reload({ waitUntil: 'networkidle' });
     await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1500);
-    }
     
     // Verify main app is visible
     await expect(page.locator('text=Workout Tracker')).toBeVisible();
@@ -423,19 +297,7 @@ test.describe('Critical Production Flows', () => {
   });
 
   test('should handle export data', async ({ page }) => {
-    // Ensure logged in
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
-    
-    const isLoggedIn = await page.locator('button:has-text("Logout")').isVisible();
-    if (!isLoggedIn) {
-      const passwordField = page.locator('input[type="password"]');
-      await passwordField.clear();
-      await passwordField.fill('asaf2024');
-      await page.click('button:has-text("Login")');
-      await page.waitForTimeout(1500);
-    }
-    
+    // Already logged in from beforeEach
     // Verify Export button exists
     const exportButton = page.locator('button:has-text("Export")');
     await exportButton.waitFor({ timeout: 5000 });

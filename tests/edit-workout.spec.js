@@ -6,29 +6,36 @@ test.describe('Edit Workout Feature', () => {
     await context.clearCookies();
     await context.clearPermissions();
     
-    await page.goto('http://localhost:5173');
+    // Add script to run before any page loads
+    await context.addInitScript(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+    
+    await page.goto('http://localhost:5173', { waitUntil: 'load' });
     
     // Wait for page to load
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Check if we're already logged in or need to log in
-    const editWorkoutButton = page.locator('button:has-text("Edit Workout")');
-    const passwordInput = page.locator('input[type="password"]');
-    
-    // Wait a bit for the page to determine if login is needed
+    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
     
+    // Login automatically
+    const passwordInput = page.locator('input[type="password"]');
     const isLoginVisible = await passwordInput.isVisible().catch(() => false);
     
     if (isLoginVisible) {
       // Need to login
-      await passwordInput.fill('test123');
+      await passwordInput.fill('asaf2024');
       const loginButton = page.locator('button:has-text("Login")');
       await loginButton.click();
+      await page.waitForTimeout(1000);
+      
+      // Verify login successful
+      await page.waitForSelector('button:has-text("Logout")', { timeout: 5000 });
     }
     
     // Wait for main app to be ready
-    await editWorkoutButton.first().waitFor({ state: 'visible', timeout: 15000 });
+    const editWorkoutButton = page.locator('button:has-text("Edit Workout")');
+    await editWorkoutButton.first().waitFor({ state: 'visible', timeout: 5000 });
   });
 
   test('should display Edit Workout button on workout days', async ({ page }) => {

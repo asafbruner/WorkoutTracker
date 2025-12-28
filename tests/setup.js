@@ -1,11 +1,5 @@
-import { expect, afterEach, vi } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-
-// Cleanup after each test
-afterEach(() => {
-  cleanup();
-});
 
 // Mock Web Crypto API for password hashing
 if (!global.crypto) {
@@ -88,21 +82,4 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
 };
 
-// Suppress console errors in tests
-const originalError = console.error;
-beforeAll(() => {
-  console.error = (...args) => {
-    if (
-      typeof args[0] === 'string' &&
-      (args[0].includes('Warning: ReactDOM.render') ||
-       args[0].includes('Not implemented: HTMLFormElement.prototype.submit'))
-    ) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
-});
-
-afterAll(() => {
-  console.error = originalError;
-});
+// Note: Console error suppression removed due to vitest hook issues

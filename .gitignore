@@ -28,3 +28,10 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Test results
+test-results/
+playwright-report/
+
+# Invalid Windows file
+nul
